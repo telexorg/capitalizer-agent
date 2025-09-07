@@ -3,9 +3,10 @@ from datetime import datetime
 from pprint import pprint
 import uvicorn, json
 from uuid import uuid4
-from fastapi import FastAPI, Request, status, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, status, HTTPException
 from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
+import schemas
 
 from a2a.types import (
     AgentCard,
@@ -68,9 +69,10 @@ def get_agent_card(request: Request):
     return card
 
 
-async def handle_task(message:str, request_id, user_id:str, task_id: str, webhook_url: str, api_key: str, context_id: str):
+async def handle_task(message:schemas.CapitalizerConfig, task_id: str, context_id: str):
     
-    capitalized = message.upper()
+    message_text = message.target_text.value
+    capitalized = message_text.upper()
     print(f"after capitalizing {capitalized}")
 
     parts = a2a_types.TextPart(text=capitalized)
@@ -96,7 +98,7 @@ async def handle_task(message:str, request_id, user_id:str, task_id: str, webhoo
 
 
 @app.post("/")
-async def handle_request(request: Request, background_tasks: BackgroundTasks):
+async def handle_request(request: Request):
   try:
     body = await request.json()
 
@@ -109,14 +111,10 @@ async def handle_request(request: Request, background_tasks: BackgroundTasks):
     )
 
   request_id = body.get("id")
-  user_id = body["params"]["message"]["metadata"].get("telex_user_id", None)  
-  org_id = body["params"]["message"]["metadata"].get("org_id", None)  
-  webhook_url = body["params"]["configuration"]["pushNotificationConfig"]["url"]
-  api_key = body["params"]["configuration"]["pushNotificationConfig"]["authentication"].get("credentials", TELEX_API_KEY)
 
-  message_parts = body["params"]["message"]["parts"]
+  message = schemas.CapitalizerConfig.model_validate(body["params"]["message"]["parts"][0]["data"])
 
-  if not message_parts:
+  if not message:
     raise HTTPException(
       status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
       detail="Message cannot be empty."
@@ -124,21 +122,9 @@ async def handle_request(request: Request, background_tasks: BackgroundTasks):
   
   context_id = uuid4().hex
   new_task_id  = uuid4().hex
-
-  incoming_message: a2a_types.Part = a2a_types.TextPart.model_validate(message_parts[0])
-
-  print(incoming_message, "message")
-
-  text_message = incoming_message.text
-
-  if not text_message:
-    raise HTTPException(
-      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-      detail="Message text cannot be empty."
-    )
   
   print("TASK START: ", datetime.now())
-  result = await handle_task(text_message, request_id, user_id, new_task_id, webhook_url, api_key, context_id)
+  result = await handle_task(message=message, task_id=new_task_id, context_id=context_id)
 
 
   response = a2a_types.JSONRPCResponse(
