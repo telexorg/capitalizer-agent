@@ -104,7 +104,7 @@ async def handle_request(request: a2a_types.SendMessageRequest):
         target_obj = {}
 
         for part in message_parts:
-            if part.kind == "data":
+            if isinstance(part, a2a_types.DataPart):
                 target_obj = part.data
 
 
