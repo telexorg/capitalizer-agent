@@ -8,20 +8,14 @@ from fastapi.responses import HTMLResponse
 from dotenv import load_dotenv
 import schemas
 
-from a2a.types import (
-    AgentCard,
-    AgentCapabilities,
-    AgentSkill,
-    AgentProvider
-)
+from a2a.types import AgentCard, AgentCapabilities, AgentSkill, AgentProvider
 import a2a.types as a2a_types
-
 
 
 load_dotenv()
 
-TELEX_API_KEY = os.getenv('TELEX_API_KEY')
-TELEX_API_URL = os.getenv('TELEX_API_URL')
+TELEX_API_KEY = os.getenv("TELEX_API_KEY")
+TELEX_API_URL = os.getenv("TELEX_API_URL")
 
 app = FastAPI()
 
@@ -39,29 +33,27 @@ def get_agent_card(request: Request):
     capabilities = AgentCapabilities(pushNotifications=True)
 
     skills = AgentSkill(
-        id= "all-caps",
-        name= "Capitalize all letters",
-        description= "Capitalize all letters provided",
-        inputModes= ["text"],
-        outputModes= ["text"],
-        tags=["capitalize"]
+        id="all-caps",
+        name="Capitalize all letters",
+        description="Capitalize all letters provided",
+        inputModes=["text"],
+        outputModes=["text"],
+        tags=["capitalize"],
     )
 
-    provider = AgentProvider(
-       organization="Telex", url="https://telex.im"
-    )
+    provider = AgentProvider(organization="Telex", url="https://telex.im")
 
     agent_card = AgentCard(
-        name='Capitalizer',
-        description='Capitalizes stuff',
+        name="Capitalizer",
+        description="Capitalizes stuff",
         url=current_base_url,
-        version='1.0.1',
+        version="1.0.1",
         defaultInputModes=["text/plain"],
         defaultOutputModes=["text/plain"],
         capabilities=capabilities,
         skills=[skills],
         provider=provider,
-        documentationUrl=f"{current_base_url}/docs"
+        documentationUrl=f"{current_base_url}/docs",
     )
 
     card = AgentCard.model_dump(agent_card)
@@ -69,26 +61,34 @@ def get_agent_card(request: Request):
     return card
 
 
-async def handle_task(message:schemas.CapitalizerConfig, task_id: str, context_id: str):
-    
+async def handle_task(
+    message: schemas.CapitalizerConfig, task_id: str, context_id: str
+):
+
     message_text = message.target_text.value
     capitalized = message_text.upper()
     print(f"after capitalizing {capitalized}")
 
     parts = a2a_types.TextPart(text=capitalized)
 
-    message = a2a_types.Message(messageId=uuid4().hex, role=a2a_types.Role.agent, parts=[parts])
+    message = a2a_types.Message(
+        messageId=uuid4().hex, role=a2a_types.Role.agent, parts=[parts]
+    )
 
     artifacts = a2a_types.Artifact(artifactId=uuid4().hex, parts=[parts])
 
     task = a2a_types.Task(
-        id = task_id,
-        contextId= context_id,
-        status =  a2a_types.TaskStatus(
-        state=a2a_types.TaskState.completed, 
-        message=a2a_types.Message(messageId=uuid4().hex, role=a2a_types.Role.agent, parts=[a2a_types.TextPart(text="Success!")])
+        id=task_id,
+        contextId=context_id,
+        status=a2a_types.TaskStatus(
+            state=a2a_types.TaskState.completed,
+            message=a2a_types.Message(
+                messageId=uuid4().hex,
+                role=a2a_types.Role.agent,
+                parts=[a2a_types.TextPart(text="Success!")],
+            ),
         ),
-        artifacts = [artifacts]
+        artifacts=[artifacts],
     )
 
     print("TASK END: ", datetime.now())
@@ -96,45 +96,36 @@ async def handle_task(message:schemas.CapitalizerConfig, task_id: str, context_i
     return task
 
 
-
 @app.post("/")
-async def handle_request(request: Request):
-  try:
-    body = await request.json()
+async def handle_request(request: a2a_types.SendMessageRequest):
+    try:
+        
+        message_parts = request.params.message.parts
+        target_obj = {}
 
-  except json.JSONDecodeError as e:
-    error = a2a_types.JSONParseError(
-      data = str(e)
-    )
-    response = a2a_types.JSONRPCErrorResponse(
-       error=error
-    )
-
-  request_id = body.get("id")
-
-  message = schemas.CapitalizerConfig.model_validate(body["params"]["message"]["parts"][0]["data"])
-
-  if not message:
-    raise HTTPException(
-      status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-      detail="Message cannot be empty."
-    )
-  
-  context_id = uuid4().hex
-  new_task_id  = uuid4().hex
-  
-  print("TASK START: ", datetime.now())
-  result = await handle_task(message=message, task_id=new_task_id, context_id=context_id)
+        for part in message_parts:
+            if part.kind == "data":
+                target_obj = part.data
 
 
-  response = a2a_types.JSONRPCResponse(
-      id=request_id,
-      result=result
-  )
+        telex_object_schema = schemas.CapitalizerConfig.model_validate(target_obj)
 
-  response = response.model_dump(exclude_none=True)
-  pprint(response)
-  return response
+        context_id = uuid4().hex
+        new_task_id = uuid4().hex
+
+        print("TASK START: ", datetime.now())
+        result = await handle_task(
+            message=telex_object_schema.target_text.value, task_id=new_task_id, context_id=context_id
+        )
+
+        response = a2a_types.JSONRPCResponse(id=uuid4().hex, result=result)
+
+        response = response.model_dump(exclude_none=True)
+        pprint(response)
+        return response
+    except json.JSONDecodeError as e:
+        error = a2a_types.JSONParseError(data=str(e))
+        response = a2a_types.JSONRPCErrorResponse(error=error)
 
 
 if __name__ == "__main__":
