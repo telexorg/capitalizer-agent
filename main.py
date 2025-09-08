@@ -99,23 +99,22 @@ async def handle_task(
 @app.post("/")
 async def handle_request(request: a2a_types.SendMessageRequest):
     try:
-        
+
         message_parts = request.params.message.parts
         target_obj = {}
 
         for part in message_parts:
-            if isinstance(part, a2a_types.DataPart):
-                target_obj = part.data
+            if isinstance(part.root, a2a_types.DataPart):
+                target_obj = part.root.data
 
-
-        telex_object_schema = schemas.CapitalizerConfig.model_validate(target_obj)
+        telex_object_schema = schemas.CapitalizerConfig(**target_obj)
 
         context_id = uuid4().hex
         new_task_id = uuid4().hex
 
         print("TASK START: ", datetime.now())
         result = await handle_task(
-            message=telex_object_schema.target_text.value, task_id=new_task_id, context_id=context_id
+            message=telex_object_schema, task_id=new_task_id, context_id=context_id
         )
 
         response = a2a_types.JSONRPCResponse(id=uuid4().hex, result=result)
