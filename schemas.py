@@ -9,7 +9,7 @@ class Parameter(BaseModel):
     value_type: str
     description: str
     example_value: Optional[Union[str, list[str]]] = None
-    from_conversation: bool
+    from_conversation: Optional[bool] = None
     value_options: Optional[list[str]] = None
 
 
